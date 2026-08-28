@@ -33,7 +33,6 @@ async function main() {
       email: dispatcherEmail,
       passwordHash: dispHash,
       name: 'John Dispatcher',
-      phone: '(555) 200-0001',
       role: 'DISPATCHER',
       isActive: true,
     },

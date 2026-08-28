@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   LayoutDashboard, Truck, Users, Shield, BarChart3,
   ClipboardList, Bell, Search, Menu, X, LogOut, User, ChevronLeft, ChevronRight,
-  UserCircle, Link2, Building2,
+  UserCircle, Link2, Building2, Settings, UserCog,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ import { DriverAssignView } from '@/components/drivers/driver-assign-view';
 import { LoadListView } from '@/components/loads/load-list-view';
 import { LoadDetailView } from '@/components/loads/load-detail-view';
 import { UserListView } from '@/components/users/user-list-view';
+import { SettingsView } from '@/components/settings/settings-view';
 import { ReportView } from '@/components/reports/report-view';
 import { AuditLogView } from '@/components/audit/audit-log-view';
 import { NotificationListView } from '@/components/notifications/notification-list-view';
@@ -64,6 +65,7 @@ const adminNavSections: NavSection[] = [
     title: 'TEAM',
     items: [
       { label: 'Dispatchers', view: 'dispatchers', icon: UserCircle },
+      { label: 'Users', view: 'users', icon: UserCog },
     ],
   },
   {
@@ -102,6 +104,7 @@ const viewTitles: Record<ViewName, string> = {
   loads: 'Loads',
   'load-detail': 'Load Details',
   users: 'User Management',
+  settings: 'Settings',
   reports: 'Reports',
   notifications: 'Notifications',
   'audit-logs': 'Audit Logs',
@@ -198,6 +201,12 @@ export function AppShell() {
     setSidebarOpen(false);
   }, [setView, setSidebarOpen]);
 
+  const handleProfileUpdate = useCallback((updatedUser: any) => {
+    const merged = { ...(user || {}), ...updatedUser };
+    api.setUser(merged);
+    setUser(merged);
+  }, [user]);
+
   const isAdmin = user?.role === 'ADMIN';
   const navSections = isAdmin ? adminNavSections : dispatcherNavSections;
 
@@ -217,9 +226,10 @@ export function AppShell() {
       case 'driver-assign': return <DriverAssignView />;
       case 'loads': return <LoadListView />;
       case 'load-detail': return <LoadDetailView />;
-      case 'users': return <UserListView />;
+      case 'users': return isAdmin ? <UserListView /> : <DashboardView />;
+      case 'settings': return <SettingsView onProfileUpdate={handleProfileUpdate} />;
       case 'reports': return <ReportView />;
-      case 'audit-logs': return <AuditLogView />;
+      case 'audit-logs': return isAdmin ? <AuditLogView /> : <DashboardView />;
       case 'notifications': return <NotificationListView />;
       default: return <DashboardView />;
     }
@@ -324,53 +334,96 @@ export function AppShell() {
           ))}
         </ScrollArea>
 
-        {/* User section (hidden when collapsed) */}
-        <div
-          className={cn(
-            'border-t border-white/10 shrink-0 overflow-hidden',
-            'transition-[max-height,opacity,padding] duration-200 ease-in-out',
-            sidebarCollapsed ? 'max-h-0 opacity-0 border-t-0' : 'max-h-24 opacity-100 p-3',
-          )}
-        >
-          <div className='flex items-center gap-3'>
-            <Avatar className='h-8 w-8'>
-              <AvatarFallback className='bg-white/20 text-white text-xs'>{getInitials(user?.name)}</AvatarFallback>
-            </Avatar>
-            <div className='flex-1 min-w-0'>
-              <p className='text-sm font-medium truncate'>{user?.name || 'User'}</p>
-              <p className='text-xs text-white/50 truncate'>{user?.role || ''}</p>
+        {/* Settings nav item at bottom (both roles) */}
+        <div className='shrink-0'>
+          <nav className={cn('px-2 pb-1', sidebarCollapsed ? 'flex justify-center' : '')}>
+            {(() => {
+              const settingsBtn = (
+                <button
+                  onClick={() => handleNavClick('settings')}
+                  className={cn(
+                    'flex w-full items-center rounded-lg text-sm font-medium transition-colors',
+                    sidebarCollapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2',
+                    'transition-[padding,gap,justify-content,width] duration-200 ease-in-out',
+                    currentView === 'settings'
+                      ? 'bg-white/15 text-white'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white',
+                  )}
+                  title={sidebarCollapsed ? 'Settings' : undefined}
+                >
+                  <Settings className='h-4 w-4 shrink-0' />
+                  <span
+                    className={cn(
+                      'whitespace-nowrap overflow-hidden',
+                      'transition-[opacity,width,margin] duration-200 ease-in-out',
+                      sidebarCollapsed ? 'w-0 opacity-0 ml-0' : 'w-auto opacity-100',
+                    )}
+                  >
+                    Settings
+                  </span>
+                </button>
+              );
+
+              if (sidebarCollapsed && !isMobile) {
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>{settingsBtn}</TooltipTrigger>
+                    <TooltipContent side='right' sideOffset={8}>Settings</TooltipContent>
+                  </Tooltip>
+                );
+              }
+              return settingsBtn;
+            })()}
+          </nav>
+
+          {/* User section (hidden when collapsed) */}
+          <div
+            className={cn(
+              'border-t border-white/10 overflow-hidden',
+              'transition-[max-height,opacity,padding] duration-200 ease-in-out',
+              sidebarCollapsed ? 'max-h-0 opacity-0 border-t-0' : 'max-h-24 opacity-100 p-3',
+            )}
+          >
+            <div className='flex items-center gap-3'>
+              <Avatar className='h-8 w-8'>
+                <AvatarFallback className='bg-white/20 text-white text-xs'>{getInitials(user?.name)}</AvatarFallback>
+              </Avatar>
+              <div className='flex-1 min-w-0'>
+                <p className='text-sm font-medium truncate'>{user?.name || 'User'}</p>
+                <p className='text-xs text-white/50 truncate'>{user?.role || ''}</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Collapse/Expand button (desktop only) */}
-        {!isMobile && (
-          <div className={cn(
-            'shrink-0 border-t border-white/10',
-            sidebarCollapsed ? 'flex justify-center' : 'px-2',
-            'transition-[padding] duration-200 ease-in-out',
-          )}>
-            <button
-              onClick={toggleSidebarCollapsed}
-              className={cn(
-                'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
-                'text-white/60 hover:text-white hover:bg-white/10',
-                'transition-colors w-full',
-                sidebarCollapsed && 'justify-center px-0 w-10 h-10 mx-auto',
-              )}
-              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {sidebarCollapsed ? <ChevronRight className='h-4 w-4 shrink-0' /> : <ChevronLeft className='h-4 w-4 shrink-0' />}
-              <span className={cn(
-                'whitespace-nowrap overflow-hidden',
-                'transition-[opacity,width] duration-200 ease-in-out',
-                sidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
-              )}>
-                Collapse
-              </span>
-            </button>
-          </div>
-        )}
+          {/* Collapse/Expand button (desktop only) */}
+          {!isMobile && (
+            <div className={cn(
+              'shrink-0 border-t border-white/10',
+              sidebarCollapsed ? 'flex justify-center' : 'px-2',
+              'transition-[padding] duration-200 ease-in-out',
+            )}>
+              <button
+                onClick={toggleSidebarCollapsed}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
+                  'text-white/60 hover:text-white hover:bg-white/10',
+                  'transition-colors w-full',
+                  sidebarCollapsed && 'justify-center px-0 w-10 h-10 mx-auto',
+                )}
+                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {sidebarCollapsed ? <ChevronRight className='h-4 w-4 shrink-0' /> : <ChevronLeft className='h-4 w-4 shrink-0' />}
+                <span className={cn(
+                  'whitespace-nowrap overflow-hidden',
+                  'transition-[opacity,width] duration-200 ease-in-out',
+                  sidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+                )}>
+                  Collapse
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -420,10 +473,22 @@ export function AppShell() {
                 <span className='hidden sm:inline text-sm font-medium'>{user?.name || 'User'}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align='end' className='w-48'>
-              <DropdownMenuItem><User className='mr-2 h-4 w-4' /> Profile</DropdownMenuItem>
+            <DropdownMenuContent align='end' className='w-56'>
+              <div className='px-2 py-1.5'>
+                <p className='text-sm font-medium'>{user?.name || 'User'}</p>
+                <p className='text-xs text-muted-foreground'>{user?.email}</p>
+              </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className='text-red-600'><LogOut className='mr-2 h-4 w-4' /> Logout</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleNavClick('settings')}>
+                <User className='mr-2 h-4 w-4' /> My Account
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleNavClick('settings')}>
+                <Settings className='mr-2 h-4 w-4' /> Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className='text-red-600'>
+                <LogOut className='mr-2 h-4 w-4' /> Sign Out
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </header>

@@ -12,6 +12,7 @@ export type ViewName =
   | 'loads'
   | 'load-detail'
   | 'users'
+  | 'settings'
   | 'reports'
   | 'notifications'
   | 'audit-logs';

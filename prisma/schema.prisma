@@ -13,6 +13,7 @@ model User {
   passwordHash String
   name         String?
   phone        String?
+  profileImage String?
   role         String   @default("DISPATCHER")
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
