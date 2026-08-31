@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { UserCircle, Users, Truck, DollarSign, AlertTriangle, Plus, User, Building2, Hash } from 'lucide-react';
+import { UserCircle, Users, Truck, DollarSign, AlertTriangle, Plus, User, Building2, Hash, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
@@ -13,6 +13,8 @@ import { LOAD_STATUS_LABELS, LOAD_STATUS_COLORS } from '@/lib/constants';
 import { useViewStore } from '@/store/view-store';
 import { ColumnDef } from '@tanstack/react-table';
 import { DataTable } from '@/components/shared/data-table';
+import { exportCsv } from '@/lib/export-utils';
+import { toast } from 'sonner';
 
 export function DashboardView() {
   const setView = useViewStore((s) => s.setView);
@@ -86,6 +88,19 @@ export function DashboardView() {
   if (isAdmin) {
     return (
       <div className='space-y-6'>
+        <div className='flex items-center justify-between'>
+          <h1 className='text-2xl font-bold'>Dashboard</h1>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={async () => {
+              try { await exportCsv('main-financial'); }
+              catch (e: any) { toast.error(e?.message || 'Export failed'); }
+            }}
+          >
+            <FileText className='mr-2 h-4 w-4' /> Export Main Financial Report
+          </Button>
+        </div>
         <div className='grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'>
           <KpiCard icon={Building2} label='Companies' value={data.totalCompanies ?? 0} />
           <KpiCard icon={Hash} label='Active MCs' value={data.totalMCs ?? 0} />

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
-import { Plus } from 'lucide-react';
+import { Plus, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/shared/page-header';
 import { DataTable } from '@/components/shared/data-table';
@@ -11,7 +11,10 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useViewStore } from '@/store/view-store';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { DispatcherForm } from './dispatcher-form';
+import { exportCsv } from '@/lib/export-utils';
+import { toast } from 'sonner';
 
 const DISPATCHER_STATUS_COLORS: Record<string, string> = {
   ACTIVE: 'bg-emerald-100 text-emerald-800',
@@ -24,6 +27,9 @@ export function DispatcherListView() {
   const [showForm, setShowForm] = useState(false);
   const setView = useViewStore((s) => s.setView);
   const queryClient = useQueryClient();
+
+  const user = api.getUser();
+  const isAdmin = user?.role === 'ADMIN';
 
   const { data, isLoading } = useQuery({
     queryKey: ['dispatchers', page, search],
@@ -56,6 +62,13 @@ export function DispatcherListView() {
   return (
     <div className='space-y-4'>
       <PageHeader title='Dispatchers' description='Manage your dispatcher team' actionLabel='Add Dispatcher' actionIcon={Plus} onAction={() => setShowForm(true)} />
+      {isAdmin && (
+        <div className='flex gap-2'>
+          <Button variant='outline' size='sm' onClick={async () => { try { await exportCsv('dispatcher-performance'); } catch (e: any) { toast.error(e?.message || 'Export failed'); } }}>
+            <FileText className='mr-2 h-4 w-4' /> Export Dispatcher Report
+          </Button>
+        </div>
+      )}
       <div className='flex flex-col sm:flex-row gap-3'>
         <Input placeholder='Search dispatchers...' className='max-w-xs' value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
       </div>

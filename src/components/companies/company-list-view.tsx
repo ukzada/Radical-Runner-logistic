@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
-import { Plus } from 'lucide-react';
+import { Plus, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/shared/page-header';
 import { DataTable } from '@/components/shared/data-table';
@@ -12,8 +12,10 @@ import { COMPANY_STATUS_COLORS, COMPANY_STATUS_LABELS } from '@/lib/constants';
 import { useViewStore } from '@/store/view-store';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { CompanyForm } from './company-form';
-import { useQueryClient } from '@tanstack/react-query';
+import { exportCsv } from '@/lib/export-utils';
+import { toast } from 'sonner';
 
 export function CompanyListView() {
   const [page, setPage] = useState(1);
@@ -22,6 +24,9 @@ export function CompanyListView() {
   const [showForm, setShowForm] = useState(false);
   const setView = useViewStore((s) => s.setView);
   const queryClient = useQueryClient();
+
+  const user = api.getUser();
+  const isAdmin = user?.role === 'ADMIN';
 
   const { data, isLoading } = useQuery({
     queryKey: ['companies', page, search, statusFilter],
@@ -71,6 +76,13 @@ export function CompanyListView() {
         actionIcon={Plus}
         onAction={() => setShowForm(true)}
       />
+      {isAdmin && (
+        <div className='flex gap-2'>
+          <Button variant='outline' size='sm' onClick={async () => { try { await exportCsv('company-performance'); } catch (e: any) { toast.error(e?.message || 'Export failed'); } }}>
+            <FileText className='mr-2 h-4 w-4' /> Export Company Report
+          </Button>
+        </div>
+      )}
       <div className='flex flex-col sm:flex-row gap-3'>
         <Input placeholder='Search companies...' className='max-w-xs' value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         <Select value={statusFilter || 'all'} onValueChange={(v) => { setStatusFilter(v === 'all' ? '' : v); setPage(1); }}>

@@ -12,13 +12,14 @@ import { LoadingState } from '@/components/shared/loading-state';
 import { COMPANY_STATUS_COLORS, COMPANY_STATUS_LABELS, MC_STATUS_COLORS, MC_STATUS_LABELS, DRIVER_STATUS_COLORS, DRIVER_STATUS_LABELS, LOAD_STATUS_LABELS, LOAD_STATUS_COLORS } from '@/lib/constants';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 import { ColumnDef } from '@tanstack/react-table';
-import { ArrowLeft, Building2, Users, Truck, DollarSign, Plus, Edit, Hash } from 'lucide-react';
+import { ArrowLeft, Building2, Users, Truck, DollarSign, Plus, Edit, Hash, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import { CompanyForm } from './company-form';
 import { McForm } from './mc-form';
 import { DriverForm } from '@/components/drivers/driver-form';
 import { Badge } from '@/components/ui/badge';
+import { exportCsv } from '@/lib/export-utils';
 
 export function CompanyDetailView() {
   const { viewParams, setView } = useViewStore();
@@ -128,6 +129,16 @@ export function CompanyDetailView() {
           <p className='text-sm text-muted-foreground'>{company.city}{company.state ? `, ${company.state}` : ''}{company.email ? ` · ${company.email}` : ''}</p>
         </div>
         <div className='flex gap-2'>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={async () => {
+              try { await exportCsv('company-performance', { companyId: id }); }
+              catch (e: any) { toast.error(e?.message || 'Export failed'); }
+            }}
+          >
+            <FileText className='mr-2 h-4 w-4' /> Export Report
+          </Button>
           <Button variant='outline' onClick={() => setShowCompanyForm(true)}><Edit className='mr-2 h-4 w-4' /> Edit</Button>
           <Button variant={company.status === 'ACTIVE' ? 'destructive' : 'default'} onClick={() => toggleMutation.mutate()} disabled={toggleMutation.isPending}>
             {company.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}

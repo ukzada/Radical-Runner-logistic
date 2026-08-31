@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
-import { Plus, Link2 } from 'lucide-react';
+import { Plus, Link2, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/shared/page-header';
 import { DataTable } from '@/components/shared/data-table';
@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { DriverForm } from './driver-form';
+import { exportCsv } from '@/lib/export-utils';
+import { toast } from 'sonner';
 
 export function DriverListView() {
   const [page, setPage] = useState(1);
@@ -72,6 +74,9 @@ export function DriverListView() {
       {isAdmin && (
         <div className='flex gap-2'>
           <Button variant='outline' size='sm' onClick={() => setView('driver-assign')}><Link2 className='mr-2 h-4 w-4' /> Assign Drivers</Button>
+          <Button variant='outline' size='sm' onClick={async () => { try { await exportCsv('driver-details'); } catch (e: any) { toast.error(e?.message || 'Export failed'); } }}>
+            <FileText className='mr-2 h-4 w-4' /> Export Driver Report
+          </Button>
         </div>
       )}
       <div className='flex flex-col sm:flex-row gap-3'>
@@ -90,7 +95,7 @@ export function DriverListView() {
         onRowClick={(row) => setView('driver-detail', { id: row.id })}
         emptyMessage='No drivers found'
       />
-      <DriverForm open={showForm} onClose={() => setShowForm(false)} onSuccess={() => { setShowForm(false); queryClient.invalidateQueries({ queryKey: ['drivers'] }); }} />
+      <DriverForm open={showForm} onClose={() => setShowForm(false)} editId={null} onSuccess={() => { setShowForm(false); queryClient.invalidateQueries({ queryKey: ['drivers'] }); }} />
     </div>
   );
 }

@@ -12,10 +12,16 @@ import { LoadingState } from '@/components/shared/loading-state';
 import { LOAD_STATUS_LABELS, LOAD_STATUS_COLORS, DRIVER_STATUS_COLORS, DRIVER_STATUS_LABELS } from '@/lib/constants';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 import { ColumnDef } from '@tanstack/react-table';
-import { ArrowLeft, Users, Truck, DollarSign, Edit, Power, PowerOff } from 'lucide-react';
+import { ArrowLeft, Users, Truck, DollarSign, Edit, Power, PowerOff, Plus, UserMinus, UserPlus, Download, Check, X, Loader2, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import { DispatcherForm } from './dispatcher-form';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
+import { exportCsv } from '@/lib/export-utils';
 
 const DISPATCHER_STATUS_COLORS: Record<string, string> = {
   ACTIVE: 'bg-emerald-100 text-emerald-800',
@@ -26,7 +32,10 @@ export function DispatcherDetailView() {
   const { viewParams, setView } = useViewStore();
   const id = viewParams.id;
   const [showForm, setShowForm] = useState(false);
+  const [showAssignDrivers, setShowAssignDrivers] = useState(false);
   const queryClient = useQueryClient();
+  const user = api.getUser();
+  const isAdmin = user?.role === 'ADMIN';
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['dispatcher', id],
@@ -39,6 +48,48 @@ export function DispatcherDetailView() {
     onSuccess: () => { toast.success('Dispatcher status updated'); queryClient.invalidateQueries({ queryKey: ['dispatcher', id] }); queryClient.invalidateQueries({ queryKey: ['dispatchers'] }); },
     onError: (err: any) => toast.error(err?.message || 'Failed to update status'),
   });
+
+  const assignDriversMutation = useMutation({
+    mutationFn: (driverIds: string[]) => api.post(`/api/dispatchers/${id}/drivers`, { driverIds }),
+    onSuccess: () => { toast.success('Drivers assigned'); queryClient.invalidateQueries({ queryKey: ['dispatcher', id] }); queryClient.invalidateQueries({ queryKey: ['drivers'] }); setShowAssignDrivers(false); },
+    onError: (err: any) => toast.error(err?.message || 'Failed to assign drivers'),
+  });
+
+  const unassignDriverMutation = useMutation({
+    mutationFn: (driverId: string) => api.del(`/api/dispatchers/${id}/drivers?driverId=${driverId}`),
+    onSuccess: () => { toast.success('Driver unassigned'); queryClient.invalidateQueries({ queryKey: ['dispatcher', id] }); queryClient.invalidateQueries({ queryKey: ['drivers'] }); },
+    onError: (err: any) => toast.error(err?.message || 'Failed to unassign driver'),
+  });
+
+  // Fetch available drivers (not assigned to this dispatcher)
+  const { data: availableDrivers } = useQuery({
+    queryKey: ['available-drivers', id],
+    queryFn: () => api.get(`/api/dispatchers/${id}/drivers?available=true`),
+    enabled: !!id && showAssignDrivers,
+    staleTime: 0,
+  });
+
+  const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set());
+  const [assignSearch, setAssignSearch] = useState('');
+
+  const toggleDriver = (driverId: string) => {
+    setSelectedDrivers((prev) => {
+      const next = new Set(prev);
+      if (next.has(driverId)) next.delete(driverId);
+      else next.add(driverId);
+      return next;
+    });
+  };
+
+  const handleAssign = () => {
+    if (selectedDrivers.size === 0) return;
+    assignDriversMutation.mutate(Array.from(selectedDrivers));
+  };
+
+  const availableDriversList = availableDrivers?.drivers || [];
+  const filteredDrivers = availableDriversList.filter((d: any) =>
+    `${d.firstName} ${d.lastName}`.toLowerCase().includes(assignSearch.toLowerCase())
+  );
 
   if (isLoading) return <LoadingState count={4} />;
   if (isError) {
@@ -76,6 +127,18 @@ export function DispatcherDetailView() {
       accessorKey: 'status', header: 'Status',
       cell: ({ row }) => <StatusBadge status={row.original.status} colorMap={DRIVER_STATUS_COLORS} labelMap={DRIVER_STATUS_LABELS} />,
     },
+    {
+      id: 'actions', header: isAdmin ? 'Actions' : '',
+      cell: ({ row }) => isAdmin ? (
+        <Button
+          variant='ghost' size='sm' className='text-red-600 hover:text-red-700 h-7'
+          onClick={(e) => { e.stopPropagation(); unassignDriverMutation.mutate(row.original.id); }}
+          disabled={unassignDriverMutation.isPending}
+        >
+          <X className='mr-1 h-3 w-3' /> Unassign
+        </Button>
+      ) : null,
+    },
   ];
 
   const loadCols: ColumnDef<any>[] = [
@@ -104,6 +167,18 @@ export function DispatcherDetailView() {
           <p className='text-sm text-muted-foreground'>{dispatcher.email} · {dispatcher.phone || 'No phone'}</p>
         </div>
         <div className='flex gap-2'>
+          {isAdmin && (
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={async () => {
+                try { await exportCsv('dispatcher-performance'); }
+                catch (e: any) { toast.error(e?.message || 'Export failed'); }
+              }}
+            >
+              <FileText className='mr-2 h-4 w-4' /> Export Report
+            </Button>
+          )}
           <Button variant='outline' onClick={() => setShowForm(true)}><Edit className='mr-2 h-4 w-4' /> Edit</Button>
           <Button variant={dispatcher.isActive ? 'destructive' : 'default'} onClick={() => toggleMutation.mutate(!dispatcher.isActive)} disabled={toggleMutation.isPending}>
             {dispatcher.isActive ? <><PowerOff className='mr-2 h-4 w-4' /> Deactivate</> : <><Power className='mr-2 h-4 w-4' /> Activate</>}
@@ -129,7 +204,70 @@ export function DispatcherDetailView() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className='text-base'>Assigned Drivers</CardTitle></CardHeader>
+        <CardHeader className='flex flex-row items-center justify-between'>
+          <CardTitle className='text-base'>Assigned Drivers</CardTitle>
+          {isAdmin && (
+            <Dialog open={showAssignDrivers} onOpenChange={setShowAssignDrivers}>
+              <DialogTrigger asChild>
+                <Button size='sm' variant='outline'><Plus className='mr-2 h-4 w-4' /> Assign Driver</Button>
+              </DialogTrigger>
+              <DialogContent className='max-w-2xl max-h-[80vh]'>
+                <DialogHeader>
+                  <DialogTitle>Assign Drivers to {dispatcher.name}</DialogTitle>
+                </DialogHeader>
+                <div className='space-y-4'>
+                  <Input
+                    placeholder='Search available drivers...'
+                    value={assignSearch}
+                    onChange={(e) => setAssignSearch(e.target.value)}
+                    className='w-full'
+                  />
+                  <ScrollArea className='max-h-80'>
+                    <div className='space-y-2'>
+                      {filteredDrivers.length === 0 && (
+                        <p className='text-sm text-muted-foreground text-center py-8'>No available drivers found</p>
+                      )}
+                      {filteredDrivers.map((d: any) => (
+                        <div
+                          key={d.id}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 transition-colors',
+                            selectedDrivers.has(d.id) && 'bg-primary/5 border border-primary'
+                          )}
+                          onClick={() => toggleDriver(d.id)}
+                        >
+                          <Checkbox
+                            checked={selectedDrivers.has(d.id)}
+                            onCheckedChange={() => toggleDriver(d.id)}
+                          />
+                          <div className='flex-1 min-w-0'>
+                            <p className='font-medium text-sm truncate'>{d.firstName} {d.lastName}</p>
+                            <div className='flex items-center gap-2'>
+                              {d.companyName && <span className='text-xs text-muted-foreground'>{d.companyName}</span>}
+                              {d.mcNumber && <span className='text-xs font-mono text-muted-foreground'>{d.mcNumber}</span>}
+                              <StatusBadge status={d.status} colorMap={DRIVER_STATUS_COLORS} labelMap={DRIVER_STATUS_LABELS} />
+                            </div>
+                          </div>
+                          {selectedDrivers.has(d.id) && <Check className='h-4 w-4 text-primary' />}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                  <div className='flex justify-end gap-2 pt-2 border-t'>
+                    <Button variant='outline' onClick={() => setShowAssignDrivers(false)}>Cancel</Button>
+                    <Button
+                      onClick={handleAssign}
+                      disabled={assignDriversMutation.isPending || selectedDrivers.size === 0}
+                    >
+                      {assignDriversMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+                      <Check className='mr-1 h-4 w-4' /> Assign {selectedDrivers.size} Driver{selectedDrivers.size > 1 ? 's' : ''}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+        </CardHeader>
         <CardContent>
           <DataTable columns={driverCols} data={drivers} onRowClick={(row) => setView('driver-detail', { id: row.id })} emptyMessage='No drivers assigned' />
         </CardContent>

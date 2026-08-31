@@ -177,19 +177,25 @@ export function AppShell() {
     sidebarCollapsed, toggleSidebarCollapsed,
   } = useViewStore();
   const isMobile = useIsMobile();
-  const [authenticated, setAuthenticated] = useState(() => api.isAuthenticated());
-  const [user, setUser] = useState(() => api.getUser());
+  // Initial state matches SSR (unauthenticated) - do not read localStorage during render
+  const [authenticated, setAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
 
   useEffect(() => {
-    if (!authenticated) return;
-    api.get('/api/notifications?unread=true&limit=1').then((data: any) => {
-      setNotifCount(data?.unreadCount || 0);
-    }).catch(() => {});
-  }, [authenticated]);
+    // After mount, check browser-only auth state
+    // This runs on the client after initial render, matching SSR initial state
+    api.isAuthenticated().then((isAuth) => {
+      setAuthenticated(isAuth);
+    }).catch(() => setAuthenticated(false));
+    api.getUser().then((usr) => {
+      setUser(usr);
+    }).catch(() => setUser(null));
+  }, []);
 
+  // ... rest of the component unchanged
   const handleLogout = useCallback(() => {
     api.clearTokens();
     setAuthenticated(false);
@@ -211,7 +217,8 @@ export function AppShell() {
   const navSections = isAdmin ? adminNavSections : dispatcherNavSections;
 
   if (!authenticated) {
-    return <LoginView onSuccess={() => { setAuthenticated(true); setUser(api.getUser()); }} />;
+return <LoginView onSuccess={() => { setAuthenticated(true); 
+api.getUser().then((usr) => setUser(usr)); }} />;
   }
 
   function renderView() {

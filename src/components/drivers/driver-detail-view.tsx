@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useViewStore } from '@/store/view-store';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,20 +12,73 @@ import { LoadingState } from '@/components/shared/loading-state';
 import { DRIVER_STATUS_COLORS, DRIVER_STATUS_LABELS, LOAD_STATUS_LABELS, LOAD_STATUS_COLORS } from '@/lib/constants';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { ColumnDef } from '@tanstack/react-table';
-import { ArrowLeft, Truck, DollarSign, MapPin, UserCircle, Building2, Hash } from 'lucide-react';
+import { ArrowLeft, Truck, DollarSign, MapPin, UserCircle, Building2, Hash, UserPlus, UserMinus, Loader2, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { DriverForm } from './driver-form';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { exportCsv } from '@/lib/export-utils';
 
 export function DriverDetailView() {
   const { viewParams, setView } = useViewStore();
   const id = viewParams.id;
   const [showForm, setShowForm] = useState(false);
+  const [showAssignDispatcher, setShowAssignDispatcher] = useState(false);
   const queryClient = useQueryClient();
+  const user = api.getUser();
+  const isAdmin = user?.role === 'ADMIN';
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['driver', id],
     queryFn: () => api.get(`/api/drivers/${id}`),
     enabled: !!id,
+  });
+
+  // Fetch available dispatchers for assignment
+  const { data: dispatchersData } = useQuery({
+    queryKey: ['dispatchers-all'],
+    queryFn: () => api.get('/api/dispatchers?limit=100'),
+    enabled: isAdmin && showAssignDispatcher,
+    staleTime: 0,
+  });
+
+  const [selectedDispatcherId, setSelectedDispatcherId] = useState<string>('');
+
+  const assignDispatcherMutation = useMutation({
+    mutationFn: (dispatcherId: string) => api.post(`/api/dispatchers/${dispatcherId}/drivers`, { driverIds: [id] }),
+    onSuccess: () => {
+      toast.success('Dispatcher assigned');
+      queryClient.invalidateQueries({ queryKey: ['driver', id] });
+      queryClient.invalidateQueries({ queryKey: ['dispatchers'] });
+      queryClient.invalidateQueries({ queryKey: ['drivers'] });
+      setShowAssignDispatcher(false);
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to assign dispatcher'),
+  });
+
+  const unassignDispatcherMutation = useMutation({
+    mutationFn: (dispatcherId: string) => api.del(`/api/dispatchers/${dispatcherId}/drivers?driverId=${id}`),
+    onSuccess: () => {
+      toast.success('Dispatcher unassigned');
+      queryClient.invalidateQueries({ queryKey: ['driver', id] });
+      queryClient.invalidateQueries({ queryKey: ['dispatchers'] });
+      queryClient.invalidateQueries({ queryKey: ['drivers'] });
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to unassign dispatcher'),
+  });
+
+  const reassignDispatcherMutation = useMutation({
+    mutationFn: (newDispatcherId: string) => api.put(`/api/dispatchers/${driver.dispatcherId}/drivers`, { driverId: id, newDispatcherId }),
+    onSuccess: () => {
+      toast.success('Dispatcher reassigned');
+      queryClient.invalidateQueries({ queryKey: ['driver', id] });
+      queryClient.invalidateQueries({ queryKey: ['dispatchers'] });
+      queryClient.invalidateQueries({ queryKey: ['drivers'] });
+      setShowAssignDispatcher(false);
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to reassign dispatcher'),
   });
 
   if (isLoading) return <LoadingState count={4} />;
@@ -68,7 +121,19 @@ export function DriverDetailView() {
             {driver.dispatcherName || 'Unassigned'}
           </p>
         </div>
-        <Button variant='outline' onClick={() => setShowForm(true)}>Edit</Button>
+          {isAdmin && (
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={async () => {
+                try { await exportCsv('driver-details', { driverId: id }); }
+                catch (e: any) { toast.error(e?.message || 'Export failed'); }
+              }}
+            >
+              <FileText className='mr-2 h-4 w-4' /> Export Report
+            </Button>
+          )}
+          <Button variant='outline' onClick={() => setShowForm(true)}>Edit</Button>
       </div>
 
       <div className='grid gap-4 grid-cols-2 lg:grid-cols-2'>
@@ -94,6 +159,65 @@ export function DriverDetailView() {
                 </button>
               ) : (
                 <span className='text-muted-foreground'>Unassigned</span>
+              )}
+              {isAdmin && (
+                <div className='flex items-center gap-2 ml-2'>
+                  <Dialog open={showAssignDispatcher} onOpenChange={setShowAssignDispatcher}>
+                    <DialogTrigger asChild>
+                      <Button variant='outline' size='sm' className='h-7'>
+                        {driver.dispatcherName ? <UserMinus className='mr-1 h-3 w-3' /> : <UserPlus className='mr-1 h-3 w-3' />}
+                        {driver.dispatcherName ? 'Change' : 'Assign'}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>{driver.dispatcherName ? 'Reassign Dispatcher' : 'Assign Dispatcher'}</DialogTitle>
+                      </DialogHeader>
+                      <div className='space-y-4'>
+                        <Select
+                          value={selectedDispatcherId}
+                          onValueChange={setSelectedDispatcherId}
+                        >
+                          <SelectTrigger className='w-full'>
+                            <SelectValue placeholder='Select dispatcher...' />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(dispatchersData?.dispatchers || []).map((d: any) => (
+                              <SelectItem key={d.id} value={d.id}>
+                                {d.name} ({d.driverCount || 0} drivers)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className='flex justify-end gap-2'>
+                          <Button variant='outline' onClick={() => setShowAssignDispatcher(false)}>Cancel</Button>
+                          <Button
+                            onClick={() => {
+                              if (driver.dispatcherId) {
+                                reassignDispatcherMutation.mutate(selectedDispatcherId);
+                              } else {
+                                assignDispatcherMutation.mutate(selectedDispatcherId);
+                              }
+                            }}
+                            disabled={(assignDispatcherMutation.isPending || reassignDispatcherMutation.isPending) || !selectedDispatcherId}
+                          >
+                            {(assignDispatcherMutation.isPending || reassignDispatcherMutation.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+                            {driver.dispatcherName ? 'Reassign' : 'Assign'}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                  {driver.dispatcherId && (
+                    <Button
+                      variant='ghost' size='sm' className='text-red-600 hover:text-red-700 h-7'
+                      onClick={() => unassignDispatcherMutation.mutate(driver.dispatcherId!)}
+                      disabled={unassignDispatcherMutation.isPending}
+                    >
+                      <UserMinus className='mr-1 h-3 w-3' /> Remove
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
             <div>

@@ -22,18 +22,17 @@ class ApiClient {
     localStorage.removeItem('user');
   }
 
-  getUser() {
-    if (typeof window === 'undefined') return null;
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+  getUser(): Promise<any> {
+    if (typeof window === 'undefined') return Promise.resolve(null);
+    return Promise.resolve(localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!) : null);
   }
 
   setUser(user: any) {
     localStorage.setItem('user', JSON.stringify(user));
   }
 
-  isAuthenticated(): boolean {
-    return !!this.getAccessToken();
+  isAuthenticated(): Promise<boolean> {
+    return Promise.resolve(!!this.getAccessToken());
   }
 
   async refreshTokens(): Promise<boolean> {
