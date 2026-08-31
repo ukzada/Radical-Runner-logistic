@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  phone        String?
+  profileImage String?
+  role         String   @default("DISPATCHER")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs           AuditLog[]
+  createdLoads        Load[]           @relation("LoadCreator")
+  driverAssignments   DriverDispatcher[] @relation("DispatcherAssignments")
+  notifications       Notification[]
+  resetRequests       PasswordResetRequest[]
+  reviewedResets      PasswordResetRequest[] @relation("ResetReviewer")
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  status      String   @default("ACTIVE")
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  mcs     MC[]
+  drivers Driver[]
+}
+
+model MC {
+  id          String   @id @default(cuid())
+  mcNumber    String
+  companyId   String
+  status      String   @default("ACTIVE")
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+  drivers     Driver[]
+
+  @@unique([mcNumber, companyId])
+}
+
+model Driver {
+  id            String    @id @default(cuid())
+  firstName     String
+  lastName      String
+  phone         String?
+  email         String?
+  driverId      String?
+  cdlNumber     String?
+  cdlState      String?
+  cdlExpiration DateTime?
+  status        String    @default("ACTIVE")
+  notes         String?
+  truckType     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company    Company  @relation(fields: [companyId], references: [id])
+  companyId  String
+  mc         MC?                  @relation(fields: [mcId], references: [id])
+  mcId       String?
+  dispatcherAssignments DriverDispatcher[]
+  loads                 Load[]
+}
+
+model DriverDispatcher {
+  id           String   @id @default(cuid())
+  driverId     String
+  dispatcherId String
+  assignedAt   DateTime @default(now())
+
+  driver     Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  dispatcher User     @relation("DispatcherAssignments", fields: [dispatcherId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, dispatcherId])
+}
+
+model Load {
+  id             String   @id @default(cuid())
+  loadNumber     String   @unique
+  driverId       String?
+  dispatcherId   String?
+  status         String   @default("AVAILABLE")
+  loadDate       DateTime?
+  pickupDate     DateTime?
+  deliveryDate   DateTime?
+  origin         String?
+  destination    String?
+  pickupCity     String?
+  pickupState    String?
+  deliveryCity   String?
+  deliveryState  String?
+  loadPrice      Float    @default(0)
+  commodity      String?
+  notes          String?
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  driver   Driver?  @relation(fields: [driverId], references: [id])
+  dispatcher User?   @relation("LoadCreator", fields: [createdBy], references: [id])
+}
+
+model Notification {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  title             String
+  message           String
+  isRead            Boolean  @default(false)
+  relatedEntityType String?
+  relatedEntityId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  status      String   @default("PENDING")
+  reason      String?
+  createdAt   DateTime @default(now())
+  reviewedAt  DateTime?
+  reviewedBy  String?
+  notes       String?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer    User?    @relation("ResetReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([status])
+  @@index([userId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  entityType  String?
+  entityId    String?
+  oldValues   String?
+  newValues   String?
+  reason      String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
