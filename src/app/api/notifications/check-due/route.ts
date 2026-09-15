@@ -6,9 +6,11 @@ import { runDeliveryReminderScan } from '@/lib/delivery-reminders';
  *
  * Manual/external trigger for the delivery-date reminder scan.
  * This path is PUBLIC in middleware but guarded here by either:
- *   1. x-cron-secret header matching CRON_SECRET (for external schedulers,
- *      e.g. cron-job.org, GitHub Actions, k8s CronJob), or
- *   2. a valid ADMIN bearer token (for on-demand checks from the UI).
+ *   1. x-cron-secret header matching CRON_SECRET (custom schedulers:
+ *      cron-job.org, GitHub Actions, k8s CronJob), or
+ *   2. an "Authorization: Bearer <CRON_SECRET>" header matching CRON_SECRET
+ *      (exactly what Vercel Cron sends), or
+ *   3. a valid ADMIN bearer token (for on-demand checks from the UI).
  *
  * Safe to call repeatedly — the scan is idempotent (dedupeKey-unique).
  */
@@ -17,7 +19,11 @@ async function handle(request: Request) {
     const secret = process.env.CRON_SECRET || '';
     const cronSecret = request.headers.get('x-cron-secret');
 
-    if (secret && cronSecret === secret) {
+    // Vercel Cron sends "Authorization: Bearer <CRON_SECRET>"
+    const authHeader = request.headers.get('Authorization') || '';
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
+    if ((secret && cronSecret === secret) || (secret && bearer === secret)) {
       // External scheduler with the correct secret — proceed
     } else {
       // Otherwise require an ADMIN token
