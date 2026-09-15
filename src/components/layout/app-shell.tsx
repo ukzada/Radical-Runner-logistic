@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   LayoutDashboard, Truck, Users, Shield, BarChart3,
   ClipboardList, Bell, Search, Menu, X, LogOut, User, ChevronLeft, ChevronRight,
-  UserCircle, Link2, Building2, Settings, UserCog,
+  UserCircle, Link2, Building2, Settings, UserCog, Crown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,8 @@ import { LoginView } from '@/components/auth/login-view';
 import { DashboardView } from '@/components/dashboard/dashboard-view';
 import { CompanyListView } from '@/components/companies/company-list-view';
 import { CompanyDetailView } from '@/components/companies/company-detail-view';
+import { OwnerListView } from '@/components/owners/owner-list-view';
+import { OwnerDetailView } from '@/components/owners/owner-detail-view';
 import { DispatcherListView } from '@/components/dispatchers/dispatcher-list-view';
 import { DispatcherDetailView } from '@/components/dispatchers/dispatcher-detail-view';
 import { DriverListView } from '@/components/drivers/driver-list-view';
@@ -34,6 +36,9 @@ import { SettingsView } from '@/components/settings/settings-view';
 import { ReportView } from '@/components/reports/report-view';
 import { AuditLogView } from '@/components/audit/audit-log-view';
 import { NotificationListView } from '@/components/notifications/notification-list-view';
+import { OwnerPortal } from '@/components/owner/owner-portal';
+import { OwnerTruckDetail } from '@/components/owner/owner-truck-detail';
+import { useNotificationAlarm } from '@/hooks/use-notification-alarm';
 
 interface NavItem {
   label: string;
@@ -58,6 +63,7 @@ const adminNavSections: NavSection[] = [
     title: 'ORGANIZATION',
     items: [
       { label: 'Companies', view: 'companies', icon: Building2 },
+      { label: 'Owners', view: 'owners', icon: Crown },
       { label: 'Drivers', view: 'drivers', icon: Users },
     ],
   },
@@ -96,6 +102,8 @@ const viewTitles: Record<ViewName, string> = {
   dashboard: 'Dashboard',
   companies: 'Companies',
   'company-detail': 'Company Details',
+  owners: 'Company Owners',
+  'owner-detail': 'Owner Details',
   dispatchers: 'Dispatchers',
   'dispatcher-detail': 'Dispatcher Details',
   drivers: 'Drivers',
@@ -108,6 +116,8 @@ const viewTitles: Record<ViewName, string> = {
   reports: 'Reports',
   notifications: 'Notifications',
   'audit-logs': 'Audit Logs',
+  'owner-portal': 'Fleet Owner Portal',
+  'owner-truck-detail': 'Truck Details',
 };
 
 function SearchResults({ query, onClose }: { query: string; onClose: () => void }) {
@@ -195,6 +205,15 @@ export function AppShell() {
     }).catch(() => setUser(null));
   }, []);
 
+  const role = user?.role as string | undefined;
+
+  // Delivery-date alarm: polls notifications, beeps + toasts on new unread items.
+  // Only meaningful for roles that work inside the admin/dispatcher shell.
+  useNotificationAlarm({
+    enabled: !!authenticated && (role === 'ADMIN' || role === 'DISPATCHER'),
+    onUnreadCount: setNotifCount,
+  });
+
   // ... rest of the component unchanged
   const handleLogout = useCallback(() => {
     api.clearTokens();
@@ -213,12 +232,35 @@ export function AppShell() {
     setUser(merged);
   }, [user]);
 
+  const handleLoginSuccess = useCallback(() => {
+    setAuthenticated(true);
+    api.getUser().then((usr) => {
+      setUser(usr);
+      // Ask for browser notification permission right after login so
+      // delivery-date alarms can surface as system notifications
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+      // Company owners land directly in their standalone portal
+      if (usr?.role === 'COMPANY_OWNER') setView('owner-portal');
+    }).catch(() => setUser(null));
+  }, [setView]);
+
   const isAdmin = user?.role === 'ADMIN';
   const navSections = isAdmin ? adminNavSections : dispatcherNavSections;
 
   if (!authenticated) {
-return <LoginView onSuccess={() => { setAuthenticated(true); 
-api.getUser().then((usr) => setUser(usr)); }} />;
+    return <LoginView onSuccess={handleLoginSuccess} />;
+  }
+
+  // Company owners bypass the admin/dispatcher shell entirely —
+  // they get a dedicated dark fleet portal with its own navigation.
+  if (role === 'COMPANY_OWNER') {
+    return currentView === 'owner-truck-detail' ? (
+      <OwnerTruckDetail />
+    ) : (
+      <OwnerPortal onLogout={handleLogout} />
+    );
   }
 
   function renderView() {
@@ -226,6 +268,8 @@ api.getUser().then((usr) => setUser(usr)); }} />;
       case 'dashboard': return <DashboardView />;
       case 'companies': return <CompanyListView />;
       case 'company-detail': return <CompanyDetailView />;
+      case 'owners': return isAdmin ? <OwnerListView /> : <DashboardView />;
+      case 'owner-detail': return isAdmin ? <OwnerDetailView /> : <DashboardView />;
       case 'dispatchers': return <DispatcherListView />;
       case 'dispatcher-detail': return <DispatcherDetailView />;
       case 'drivers': return <DriverListView />;
@@ -238,6 +282,8 @@ api.getUser().then((usr) => setUser(usr)); }} />;
       case 'reports': return <ReportView />;
       case 'audit-logs': return isAdmin ? <AuditLogView /> : <DashboardView />;
       case 'notifications': return <NotificationListView />;
+      case 'owner-portal': return <OwnerPortal onLogout={handleLogout} />;
+      case 'owner-truck-detail': return <OwnerTruckDetail />;
       default: return <DashboardView />;
     }
   }

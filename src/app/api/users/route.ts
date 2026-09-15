@@ -43,6 +43,9 @@ export async function GET(request: Request) {
           phone: true,
           role: true,
           isActive: true,
+          companyId: true,
+          feePercentage: true,
+          company: { select: { name: true } },
           createdAt: true,
           updatedAt: true,
         },
@@ -54,7 +57,7 @@ export async function GET(request: Request) {
     ]);
 
     return successResponse({
-      users,
+      users: users.map((u) => ({ ...u, companyName: u.company?.name || null })),
       meta: buildPaginationMeta(total, page, limit),
     });
   } catch (error: any) {
@@ -73,14 +76,35 @@ export async function POST(request: Request) {
     requireRole(authUser, ['ADMIN']);
 
     const body = await request.json();
-    const { name, email, password, role, isActive } = body;
+    const { name, email, password, role, isActive, feePercentage } = body;
 
     if (!email || !password) {
       return errorResponse('VALIDATION_ERROR', 'Email and password are required', 400);
     }
 
-    if (!['ADMIN', 'DISPATCHER'].includes(role)) {
-      return errorResponse('VALIDATION_ERROR', 'Role must be ADMIN or DISPATCHER', 400);
+    if (!['ADMIN', 'DISPATCHER', 'COMPANY_OWNER'].includes(role)) {
+      return errorResponse('VALIDATION_ERROR', 'Role must be ADMIN, DISPATCHER, or COMPANY_OWNER', 400);
+    }
+
+    // COMPANY_OWNER accounts must be linked to a company
+    const { companyId } = body;
+    if (role === 'COMPANY_OWNER' && !companyId) {
+      return errorResponse('VALIDATION_ERROR', 'companyId is required for COMPANY_OWNER users', 400);
+    }
+    if (companyId) {
+      const companyExists = await db.company.findUnique({ where: { id: companyId } });
+      if (!companyExists) {
+        return errorResponse('VALIDATION_ERROR', 'Company not found', 400);
+      }
+    }
+
+    // Dispatcher commission percentage (optional, defaults to 10 in DB)
+    let parsedFeePercentage: number | undefined;
+    if (feePercentage !== undefined && feePercentage !== null && feePercentage !== '') {
+      parsedFeePercentage = Number(feePercentage);
+      if (Number.isNaN(parsedFeePercentage) || parsedFeePercentage < 0 || parsedFeePercentage > 100) {
+        return errorResponse('VALIDATION_ERROR', 'Dispatcher fee percentage must be between 0 and 100', 400);
+      }
     }
 
     if (password.length < 8) {
@@ -104,7 +128,11 @@ export async function POST(request: Request) {
         passwordHash,
         name: name || null,
         role,
+        companyId: companyId || null,
         isActive: isActive !== false,
+        ...(role === 'DISPATCHER' && parsedFeePercentage !== undefined
+          ? { feePercentage: parsedFeePercentage }
+          : {}),
       },
       select: {
         id: true,
@@ -113,6 +141,8 @@ export async function POST(request: Request) {
         phone: true,
         role: true,
         isActive: true,
+        companyId: true,
+        feePercentage: true,
         createdAt: true,
       },
     });

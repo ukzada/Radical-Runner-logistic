@@ -13,6 +13,7 @@ export async function GET(request: Request) {
         name: true,
         role: true,
         isActive: true,
+        companyId: true,
         createdAt: true,
         updatedAt: true,
       },

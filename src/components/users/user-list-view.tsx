@@ -107,6 +107,7 @@ export function UserListView() {
             <SelectItem value='all'>All Roles</SelectItem>
             <SelectItem value='ADMIN'>Admin</SelectItem>
             <SelectItem value='DISPATCHER'>Dispatcher</SelectItem>
+            <SelectItem value='COMPANY_OWNER'>Company Owner</SelectItem>
           </SelectContent>
         </Select>
         <Select value={statusFilter || 'all'} onValueChange={(v) => { setStatusFilter(v === 'all' ? '' : v); setPage(1); }}>
@@ -168,6 +169,12 @@ export function UserListView() {
                   <Badge variant={u.role === 'ADMIN' ? 'default' : 'secondary'}>
                     {USER_ROLE_LABELS[u.role] || u.role}
                   </Badge>
+                  {u.role === 'COMPANY_OWNER' && u.companyName && (
+                    <div className='text-xs text-muted-foreground mt-0.5'>{u.companyName}</div>
+                  )}
+                  {u.role === 'DISPATCHER' && u.feePercentage != null && (
+                    <div className='text-xs text-muted-foreground mt-0.5'>{u.feePercentage}% fee</div>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge variant={u.isActive ? 'default' : 'outline'} className={u.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}>
@@ -245,8 +252,14 @@ export function UserListView() {
                 </div>
               </div>
               <div className='grid grid-cols-2 gap-4 text-sm'>
-                <div><span className='text-muted-foreground'>Role:</span> <Badge variant={viewUser.role === 'ADMIN' ? 'default' : 'secondary'}>{USER_ROLE_LABELS[viewUser.role]}</Badge></div>
+                <div><span className='text-muted-foreground'>Role:</span> <Badge variant={viewUser.role === 'ADMIN' ? 'default' : 'secondary'}>{USER_ROLE_LABELS[viewUser.role] || viewUser.role}</Badge></div>
                 <div><span className='text-muted-foreground'>Status:</span> <Badge className={viewUser.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}>{viewUser.isActive ? 'Active' : 'Inactive'}</Badge></div>
+                {viewUser.role === 'COMPANY_OWNER' && (
+                  <div><span className='text-muted-foreground'>Company:</span> {viewUser.companyName || viewUser.company?.name || '—'}</div>
+                )}
+                {viewUser.role === 'DISPATCHER' && viewUser.feePercentage != null && (
+                  <div><span className='text-muted-foreground'>Dispatcher Fee:</span> {viewUser.feePercentage}%</div>
+                )}
                 <div><span className='text-muted-foreground'>Phone:</span> {viewUser.phone || '—'}</div>
                 <div><span className='text-muted-foreground'>Created:</span> {formatDate(viewUser.createdAt)}</div>
               </div>

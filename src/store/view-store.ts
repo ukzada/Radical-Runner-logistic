@@ -4,6 +4,8 @@ export type ViewName =
   | 'dashboard'
   | 'companies'
   | 'company-detail'
+  | 'owners'
+  | 'owner-detail'
   | 'dispatchers'
   | 'dispatcher-detail'
   | 'drivers'
@@ -15,7 +17,9 @@ export type ViewName =
   | 'settings'
   | 'reports'
   | 'notifications'
-  | 'audit-logs';
+  | 'audit-logs'
+  | 'owner-portal'
+  | 'owner-truck-detail';
 
 interface ViewState {
   currentView: ViewName;

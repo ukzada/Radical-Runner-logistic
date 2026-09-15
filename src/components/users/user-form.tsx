@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,29 +15,59 @@ import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { USER_ROLES, USER_ROLE_LABELS } from '@/lib/constants';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
-import { useState } from 'react';
 
-const createUserSchema = z.object({
+const baseFields = {
   name: z.string().min(1, 'Name is required'),
   email: z.string().email('Invalid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Must contain an uppercase letter')
-    .regex(/[a-z]/, 'Must contain a lowercase letter')
-    .regex(/[0-9]/, 'Must contain a number'),
-  role: z.enum(['ADMIN', 'DISPATCHER']),
+  role: z.enum(['ADMIN', 'DISPATCHER', 'COMPANY_OWNER']),
+  companyId: z.string().optional(),
+  feePercentage: z.string().optional(),
   isActive: z.boolean(),
-});
+};
 
-const editUserSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  email: z.string().email('Invalid email'),
-  password: z.string().optional().refine((v) => !v || v.length >= 8, 'Password must be at least 8 characters')
-    .refine((v) => !v || /[A-Z]/.test(v), 'Must contain an uppercase letter')
-    .refine((v) => !v || /[a-z]/.test(v), 'Must contain a lowercase letter')
-    .refine((v) => !v || /[0-9]/.test(v), 'Must contain a number'),
-  role: z.enum(['ADMIN', 'DISPATCHER']),
-  isActive: z.boolean(),
-});
+const passwordRules = (required: boolean) =>
+  required
+    ? z.string().min(8, 'Password must be at least 8 characters')
+        .regex(/[A-Z]/, 'Must contain an uppercase letter')
+        .regex(/[a-z]/, 'Must contain a lowercase letter')
+        .regex(/[0-9]/, 'Must contain a number')
+    : z.string().optional().refine((v) => !v || v.length >= 8, 'Password must be at least 8 characters')
+        .refine((v) => !v || /[A-Z]/.test(v), 'Must contain an uppercase letter')
+        .refine((v) => !v || /[a-z]/.test(v), 'Must contain a lowercase letter')
+        .refine((v) => !v || /[0-9]/.test(v), 'Must contain a number');
+
+// COMPANY_OWNER requires a company; DISPATCHER fee % must be 0-100 when provided
+const roleRefinement = (data: {
+  role: string;
+  companyId?: string;
+  feePercentage?: string;
+}, ctx: z.RefinementCtx) => {
+  if (data.role === 'COMPANY_OWNER' && !data.companyId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['companyId'],
+      message: 'Company is required for a company owner',
+    });
+  }
+  if (data.role === 'DISPATCHER' && data.feePercentage) {
+    const n = Number(data.feePercentage);
+    if (Number.isNaN(n) || n < 0 || n > 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['feePercentage'],
+        message: 'Fee must be between 0 and 100',
+      });
+    }
+  }
+};
+
+const createUserSchema = z
+  .object({ ...baseFields, password: passwordRules(true) })
+  .superRefine(roleRefinement);
+
+const editUserSchema = z
+  .object({ ...baseFields, password: passwordRules(false) })
+  .superRefine(roleRefinement);
 
 type CreateUserFormValues = z.infer<typeof createUserSchema>;
 type EditUserFormValues = z.infer<typeof editUserSchema>;
@@ -49,13 +79,25 @@ interface UserFormProps {
   onSuccess: () => void;
 }
 
+const EMPTY_VALUES = {
+  name: '',
+  email: '',
+  password: '',
+  role: 'DISPATCHER' as const,
+  companyId: '',
+  feePercentage: '10',
+  isActive: true,
+};
+
 export function UserForm({ open, onClose, editId, onSuccess }: UserFormProps) {
   const queryClient = useQueryClient();
   const [showPassword, setShowPassword] = useState(false);
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CreateUserFormValues | EditUserFormValues>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<
+    CreateUserFormValues | EditUserFormValues
+  >({
     resolver: zodResolver(editId ? editUserSchema : createUserSchema),
-    defaultValues: { name: '', email: '', password: '', role: 'DISPATCHER', isActive: true },
+    defaultValues: EMPTY_VALUES,
   });
 
   const { data: existing, isLoading: loadingExisting } = useQuery({
@@ -64,6 +106,14 @@ export function UserForm({ open, onClose, editId, onSuccess }: UserFormProps) {
     enabled: !!editId,
   });
 
+  // Companies list for the Company Owner picker
+  const { data: companiesData, isLoading: loadingCompanies } = useQuery({
+    queryKey: ['companies', 'for-user-form'],
+    queryFn: () => api.get('/api/companies?limit=100&sortBy=name'),
+    enabled: open,
+  });
+  const companies: Array<{ id: string; name: string }> = companiesData?.companies || [];
+
   useEffect(() => {
     if (existing) {
       reset({
@@ -71,19 +121,42 @@ export function UserForm({ open, onClose, editId, onSuccess }: UserFormProps) {
         email: existing.email,
         password: '',
         role: existing.role,
+        companyId: existing.companyId || '',
+        feePercentage:
+          existing.feePercentage !== undefined && existing.feePercentage !== null
+            ? String(existing.feePercentage)
+            : '10',
         isActive: existing.isActive,
       });
     }
   }, [existing, reset]);
 
   const mutation = useMutation({
-    mutationFn: (values: any) =>
-      editId ? api.put(`/api/users/${editId}`, values) : api.post('/api/users', values),
+    mutationFn: (values: any) => {
+      // Shape the payload per role
+      const payload: any = {
+        name: values.name,
+        email: values.email,
+        role: values.role,
+        isActive: values.isActive,
+      };
+      if (!editId) payload.password = values.password;
+      else if (values.password) payload.password = values.password;
+
+      if (values.role === 'COMPANY_OWNER') {
+        payload.companyId = values.companyId;
+      } else if (values.role === 'DISPATCHER') {
+        if (values.feePercentage !== undefined && values.feePercentage !== '') {
+          payload.feePercentage = Number(values.feePercentage);
+        }
+      }
+      return editId ? api.put(`/api/users/${editId}`, payload) : api.post('/api/users', payload);
+    },
     onSuccess: () => {
       toast.success(editId ? 'User updated successfully' : 'User created successfully');
       queryClient.invalidateQueries({ queryKey: ['users'] });
       if (editId) queryClient.invalidateQueries({ queryKey: ['user', editId] });
-      reset({ name: '', email: '', password: '', role: 'DISPATCHER', isActive: true });
+      reset(EMPTY_VALUES);
       onSuccess();
     },
     onError: (err: any) => toast.error(err?.message || 'Failed to save user'),
@@ -92,6 +165,7 @@ export function UserForm({ open, onClose, editId, onSuccess }: UserFormProps) {
   const isEdit = !!editId;
   const isActive = watch('isActive');
   const role = watch('role');
+  const selectedCompanyId = watch('companyId');
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -152,6 +226,48 @@ export function UserForm({ open, onClose, editId, onSuccess }: UserFormProps) {
               </Select>
               {errors.role && <p className='text-xs text-red-500'>{(errors.role as any).message}</p>}
             </div>
+
+            {role === 'COMPANY_OWNER' && (
+              <div className='space-y-1.5'>
+                <Label>Company *</Label>
+                <Select
+                  value={selectedCompanyId || undefined}
+                  onValueChange={(v) => setValue('companyId', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingCompanies ? 'Loading companies…' : 'Select a company'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.companyId && <p className='text-xs text-red-500'>{errors.companyId.message}</p>}
+                <p className='text-xs text-muted-foreground'>
+                  The owner will see only this company&apos;s fleet and earnings in their portal.
+                </p>
+              </div>
+            )}
+
+            {role === 'DISPATCHER' && (
+              <div className='space-y-1.5'>
+                <Label htmlFor='user-fee'>Dispatcher Fee (%)</Label>
+                <Input
+                  id='user-fee'
+                  type='number'
+                  min='0'
+                  max='100'
+                  step='0.5'
+                  placeholder='10'
+                  {...register('feePercentage')}
+                />
+                {errors.feePercentage && <p className='text-xs text-red-500'>{errors.feePercentage.message}</p>}
+                <p className='text-xs text-muted-foreground'>
+                  Commission this dispatcher earns on each dispatched load (percentage of the load price). Used in company-owner report exports.
+                </p>
+              </div>
+            )}
 
             <div className='flex items-center gap-3'>
               <Switch

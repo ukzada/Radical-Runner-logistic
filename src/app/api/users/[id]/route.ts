@@ -23,6 +23,9 @@ export async function GET(
         profileImage: true,
         role: true,
         isActive: true,
+        companyId: true,
+        feePercentage: true,
+        company: { select: { name: true } },
         createdAt: true,
         updatedAt: true,
       },
@@ -32,7 +35,7 @@ export async function GET(
       return errorResponse('NOT_FOUND', 'User not found', 404);
     }
 
-    return successResponse(user);
+    return successResponse({ ...user, companyName: user.company?.name || null });
   } catch (error: any) {
     if (error.code === 'UNAUTHORIZED' || error.code === 'FORBIDDEN') {
       return errorResponse(error.code, error.message, error.status);
@@ -53,11 +56,38 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, email, phone, role, isActive, password } = body;
+    const { name, email, phone, role, isActive, password, companyId, feePercentage } = body;
 
     const existing = await db.user.findUnique({ where: { id } });
     if (!existing) {
       return errorResponse('NOT_FOUND', 'User not found', 404);
+    }
+
+    const VALID_ROLES = ['ADMIN', 'DISPATCHER', 'COMPANY_OWNER'];
+    if (role && !VALID_ROLES.includes(role)) {
+      return errorResponse('VALIDATION_ERROR', 'Role must be ADMIN, DISPATCHER, or COMPANY_OWNER', 400);
+    }
+
+    // COMPANY_OWNER accounts must be linked to a company
+    const targetRole = role || existing.role;
+    const targetCompanyId = companyId !== undefined ? companyId || null : existing.companyId;
+    if (targetRole === 'COMPANY_OWNER' && !targetCompanyId) {
+      return errorResponse('VALIDATION_ERROR', 'companyId is required for COMPANY_OWNER users', 400);
+    }
+    if (targetCompanyId && targetCompanyId !== existing.companyId) {
+      const companyExists = await db.company.findUnique({ where: { id: targetCompanyId } });
+      if (!companyExists) {
+        return errorResponse('VALIDATION_ERROR', 'Company not found', 400);
+      }
+    }
+
+    // Dispatcher fee percentage (0-100)
+    let parsedFeePercentage: number | undefined;
+    if (feePercentage !== undefined && feePercentage !== null && feePercentage !== '') {
+      parsedFeePercentage = Number(feePercentage);
+      if (Number.isNaN(parsedFeePercentage) || parsedFeePercentage < 0 || parsedFeePercentage > 100) {
+        return errorResponse('VALIDATION_ERROR', 'Dispatcher fee percentage must be between 0 and 100', 400);
+      }
     }
 
     // Prevent self-demotion or self-deactivation
@@ -82,8 +112,10 @@ export async function PUT(
     if (name !== undefined) updateData.name = name;
     if (email) updateData.email = email.toLowerCase();
     if (phone !== undefined) updateData.phone = phone;
-    if (role && ['ADMIN', 'DISPATCHER'].includes(role)) updateData.role = role;
+    if (role && VALID_ROLES.includes(role)) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (companyId !== undefined) updateData.companyId = companyId || null;
+    if (parsedFeePercentage !== undefined) updateData.feePercentage = parsedFeePercentage;
 
     // Handle password reset
     if (password) {
@@ -98,7 +130,8 @@ export async function PUT(
 
     const oldValues = JSON.stringify({
       name: existing.name, email: existing.email, phone: existing.phone,
-      role: existing.role, isActive: existing.isActive,
+      role: existing.role, isActive: existing.isActive, companyId: existing.companyId,
+      feePercentage: existing.feePercentage,
     });
 
     const user = await db.user.update({
@@ -107,6 +140,7 @@ export async function PUT(
       select: {
         id: true, email: true, name: true, phone: true,
         profileImage: true, role: true, isActive: true,
+        companyId: true, feePercentage: true,
         createdAt: true, updatedAt: true,
       },
     });
@@ -121,7 +155,8 @@ export async function PUT(
         oldValues,
         newValues: JSON.stringify({
           name: user.name, email: user.email, phone: user.phone,
-          role: user.role, isActive: user.isActive,
+          role: user.role, isActive: user.isActive, companyId: user.companyId,
+          feePercentage: user.feePercentage,
         }),
       },
     });

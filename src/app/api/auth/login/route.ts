@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { verifyPassword, signAccessToken, signRefreshToken } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/auth-helpers';
-import { rateLimit } from '@/lib/rate-limit';
+import { rateLimit, resetRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   try {
@@ -47,9 +47,9 @@ export async function POST(request: Request) {
       signRefreshToken(tokenPayload),
     ]);
 
-    // Clear rate limit on successful login
-    const attempts = (global as any).__loginAttempts;
-    if (attempts) attempts.delete(`login:${email.toLowerCase()}`);
+    // Clear rate limit on successful login (a few typos then correct
+    // password must not lock the user out for the full window)
+    resetRateLimit(`login:${email.toLowerCase()}`);
 
     return successResponse({
       accessToken,
@@ -59,6 +59,7 @@ export async function POST(request: Request) {
         email: user.email,
         name: user.name,
         role: user.role,
+        companyId: user.companyId,
       },
     });
   } catch (error: any) {

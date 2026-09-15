@@ -31,6 +31,15 @@ export function rateLimit(key: string, maxAttempts = MAX_ATTEMPTS, windowMs = WI
   return { allowed: true, retryAfterMs: 0 };
 }
 
+/**
+ * Clear the rate-limit window for a key.
+ * Called after a successful login so a few failed attempts followed by a
+ * correct password never lock the user out for the full 15-minute window.
+ */
+export function resetRateLimit(key: string): void {
+  attempts.delete(key);
+}
+
 // Rate limit for password reset requests: 1 per hour per user
 const resetAttempts = new Map<string, { lastRequest: number }>();
 const RESET_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour

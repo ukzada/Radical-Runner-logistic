@@ -103,12 +103,13 @@ export const MC_STATUS_COLORS: Record<string, string> = {
   INACTIVE: 'bg-gray-100 text-gray-800',
 };
 
-export const USER_ROLES = ['ADMIN', 'DISPATCHER'] as const;
+export const USER_ROLES = ['ADMIN', 'DISPATCHER', 'COMPANY_OWNER'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const USER_ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Admin',
   DISPATCHER: 'Dispatcher',
+  COMPANY_OWNER: 'Company Owner',
 };
 
 export const NOTIFICATION_TYPES = ['MISSING_POD', 'OVERDUE_INVOICE', 'EXPIRING_CDL', 'DELIVERED_NOT_INVOICED', 'PAYMENT_RECEIVED'] as const;

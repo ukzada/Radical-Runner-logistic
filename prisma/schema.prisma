@@ -8,17 +8,21 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String?
-  phone        String?
-  profileImage String?
-  role         String   @default("DISPATCHER")
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  phone         String?
+  profileImage  String?
+  role          String   @default("DISPATCHER")
+  isActive      Boolean  @default(true)
+  companyId     String?
+  // Dispatcher commission: percentage of each dispatched load's price (0-100)
+  feePercentage Float    @default(10)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
+  company             Company?           @relation(fields: [companyId], references: [id])
   auditLogs           AuditLog[]
   createdLoads        Load[]           @relation("LoadCreator")
   driverAssignments   DriverDispatcher[] @relation("DispatcherAssignments")
@@ -43,6 +47,7 @@ model Company {
 
   mcs     MC[]
   drivers Driver[]
+  owners  User[]
 }
 
 model MC {
@@ -131,6 +136,7 @@ model Notification {
   isRead            Boolean  @default(false)
   relatedEntityType String?
   relatedEntityId   String?
+  dedupeKey         String?  @unique
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
